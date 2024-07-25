@@ -47,6 +47,18 @@ jspm_packages/
 !node_modules/three/examples/jsm/controls/
 !node_modules/three/examples/jsm/controls/*
 
+!node_modules/three/examples/jsm/libs/lil-gui.module.min.js
+!node_modules/three/examples/jsm/loaders/OBJLoader.js
+
+# Additional Dependencies
+!node_modules/three-mesh-bvh/
+!node_modules/three-mesh-bvh/*/
+!node_modules/three-mesh-bvh/build/*
+!node_modules/voro3d/
+!node_modules/voro3d/*/
+!node_modules/voro3d/dist/*
+
+
 # TypeScript v1 declaration files
 typings/
 
@@ -86,4 +98,5 @@ typings/
 # FuseBox cache
 .fusebox/
 
-[Bb]uild
+[Bb]uild/main.js
+[Bb]uild/main.js.map
