@@ -56,7 +56,7 @@ jspm_packages/
 !node_modules/three-mesh-bvh/build/*
 !node_modules/voro3d/
 !node_modules/voro3d/*/
-!node_modules/voro3d/dist/*
+!node_modules/voro3d/dist2/*
 
 
 # TypeScript v1 declaration files
