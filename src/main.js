@@ -49,11 +49,11 @@ export default class Main {
         this.voronoiSpheres.visible = false;
         this.world.scene.add( this.voronoiSpheres );
 
-        this.closestSpheres = new THREE.InstancedMesh( this.sphereGeo, new THREE.MeshStandardMaterial( { color: 0x00ffff, roughness: 1, metalness: 0 } ), this.meshingParams.numPoints );
-        this.closestSpheres.castShadow = true;
-        this.closestSpheres.receiveShadow = true;
-        this.closestSpheres.visible = false;
-        this.world.scene.add( this.closestSpheres );
+        //this.closestSpheres = new THREE.InstancedMesh( this.sphereGeo, new THREE.MeshStandardMaterial( { color: 0x00ffff, roughness: 1, metalness: 0 } ), this.meshingParams.numPoints );
+        //this.closestSpheres.castShadow = true;
+        //this.closestSpheres.receiveShadow = true;
+        //this.closestSpheres.visible = false;
+        //this.world.scene.add( this.closestSpheres );
 
         // load a resource
         new OBJLoader().load( './assets/armadillo.obj',
@@ -61,6 +61,14 @@ export default class Main {
             ( xhr    ) => { console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' ); },
             ( error  ) => { console.log( 'A loading error happened', error );  }
         );
+    }
+
+    // Sample Points via Closest Point Queries
+    checkIsInside(x, y, z, invWorld, tempVec, tempVec2, closestPointData, triangleData){
+        tempVec.set(x, y, z).applyMatrix4(invWorld);                                                                   // Transform to local space
+        this.bvh.closestPointToPoint(tempVec, closestPointData);                                                       // Find the closest point on the mesh
+        getTriangleHitPointInfo(closestPointData.point, this.mesh.geometry, closestPointData.faceIndex, triangleData); // Get triangle normal
+        return triangleData.face.normal.dot(tempVec2.copy(closestPointData.point).sub(tempVec)) > 0;                   // Check if point is inside the mesh
     }
 
     generateLattice(mesh){
@@ -91,9 +99,9 @@ export default class Main {
         this.bvh = this.mesh.geometry.computeBoundsTree(); 
 
         let tempMat = new THREE.Matrix4();
-        let tempVec = new THREE.Vector3();
-        let tempVec2 = new THREE.Vector3();
-        let tempVec3 = new THREE.Vector3(1,1,1);
+        this.tempVec = new THREE.Vector3();
+        this.tempVec2 = new THREE.Vector3();
+        this.tempVec3 = new THREE.Vector3(1,1,1);
         let zeroRotation = new THREE.Quaternion();
         let sscale = new THREE.Vector3( 1, 1, 1 ).multiplyScalar(0.005);
         let bscale = new THREE.Vector3( 1, 1, 1 ).multiplyScalar(0.02);
@@ -104,9 +112,9 @@ export default class Main {
         let boxCenter = new THREE.Vector3(); bbox.getCenter(boxCenter);
         let raycaster = new THREE.Raycaster();
         let invWorld = new THREE.Matrix4().copy(this.mesh.matrixWorld).invert();
-        let closestPointData = {}; let triangleData = {};
+        this.closestPointData = {}; this.triangleData = {};
 
-        let points = [], closestPoints = [];
+        let points = [];// closestPoints = [];
         for(let i = 0; i < this.meshingParams.numPoints; i++){
             let x = (Math.random() * boxSize.x) - (boxSize.x * 0.5); 
             let y = (Math.random() * boxSize.y) - (boxSize.y * 0.5); 
@@ -125,67 +133,55 @@ export default class Main {
             //    i--; // Point is outside, reject this sample and try again
             //}
 
-            // Sample Points via Closest Point Queries
-            tempVec.set(x, y, z).applyMatrix4(invWorld);                                                                   // Transform to local space
-            this.bvh.closestPointToPoint(tempVec, closestPointData);                                                       // Find the closest point on the mesh
-            getTriangleHitPointInfo(closestPointData.point, this.mesh.geometry, closestPointData.faceIndex, triangleData); // Get triangle normal
-            let isInside = triangleData.face.normal.dot(tempVec2.copy(closestPointData.point).sub(tempVec)) > 0;           // Check if point is inside the mesh
+            let isInside = this.checkIsInside(x, y, z, invWorld, this.tempVec, this.tempVec2, this.closestPointData, this.triangleData);
 
             if(isInside) { // Points is in object
-                closestPointData.point.applyMatrix4(this.mesh.matrixWorld);
+                this.closestPointData.point.applyMatrix4(this.mesh.matrixWorld);
                 //console.log(isInside, distance, closestPointData.point, triangleData);
                 points.push(x); points.push(y); points.push(z);
-                closestPoints.push((closestPointData.point.x - x)+closestPointData.point.x);
-                closestPoints.push((closestPointData.point.y - x)+closestPointData.point.y);
-                closestPoints.push((closestPointData.point.z - x)+closestPointData.point.z);
-                this.voronoiSpheres.setMatrixAt( i, tempMat.compose( tempVec.set(x, y, z), zeroRotation, (isInside ? bscale : sscale)));
-                this.closestSpheres.setMatrixAt( i, tempMat.compose( tempVec.copy(closestPointData.point), zeroRotation, (isInside ? sscale : sscale)));
+                //closestPoints.push((closestPointData.point.x - x)+closestPointData.point.x);
+                //closestPoints.push((closestPointData.point.y - x)+closestPointData.point.y);
+                //closestPoints.push((closestPointData.point.z - x)+closestPointData.point.z);
+                this.voronoiSpheres.setMatrixAt( i, tempMat.compose( this.tempVec.set(x, y, z), zeroRotation, (isInside ? bscale : sscale)));
+                //this.closestSpheres.setMatrixAt( i, tempMat.compose( this.tempVec.copy(closestPointData.point), zeroRotation, (isInside ? sscale : sscale)));
             }else{
                 i--; // Point is outside, reject this sample and try again
             }
         }
-        points = points.concat(closestPoints);
+        //points = points.concat(closestPoints);
         this.voronoiSpheres.instanceMatrix.needsUpdate = true;
         this.voronoiSpheres.visible = true;
-        this.closestSpheres.instanceMatrix.needsUpdate = true;
-        this.closestSpheres.visible = true;
+        //this.closestSpheres.instanceMatrix.needsUpdate = true;
+        //this.closestSpheres.visible = true;
 
         Voro3D.create(boxMinCorner.x * 1, boxMaxCorner.x* 1, 1 *boxMinCorner.y+0.0001, boxMaxCorner.y* 1, boxMinCorner.z* 1, boxMaxCorner.z* 1, 3, 3, 3).then((voro) => {
             this.voro = voro;
             let cells = this.voro.computeCells(points, true);
             //cells.sort((a, b) => { return a.particleID - b.particleID; });
-            console.log(cells);
+            //console.log(cells);
 
             // Accumulate the connections
             let connectionsDict = {};
             for(let i = 0; i < cells.length; i++){
                 let cell = cells[i];
-                for(let j = 0; j < cells[i].nFaces; j++){
-                    let face = cell.faces[j];
-                    for(let k = 0; k < face.length; k++){
-                        let indexA = face[k];
-                        let indexB = face[(k+1)%face.length];
-
-                        let aVertexX = cells[i].vertices[indexA*3  ];
-                        let aVertexY = cells[i].vertices[indexA*3+1];
-                        let aVertexZ = cells[i].vertices[indexA*3+2];
-
-                        let bVertexX = cells[i].vertices[indexB*3  ];
-                        let bVertexY = cells[i].vertices[indexB*3+1];
-                        let bVertexZ = cells[i].vertices[indexB*3+2];
-
-                        let sumA     = aVertexX + aVertexY + aVertexZ;
-                        let sumB     = bVertexX + bVertexY + bVertexZ;
-                        let sum      = sumA + sumB;
-
+                for(let j = 0; j < cells[i].neighbors.length; j++){
+                    let neighbor = cell.neighbors[j];
+                    if (neighbor > i) {
+                        let sum = (cell.particleID * 10000) + cells[neighbor].particleID;
                         if (!(sum in connectionsDict)) {
-                            if(sumA < sumB){
-                                connectionsDict[sum] = [aVertexX, aVertexY, aVertexZ, bVertexX, bVertexY, bVertexZ];
-                            }else{
-                                connectionsDict[sum] = [bVertexX, bVertexY, bVertexZ, aVertexX, aVertexY, aVertexZ];
-                            }
+                            connectionsDict[sum] = [cell.x, cell.y, cell.z, cells[neighbor].x, cells[neighbor].y, cells[neighbor].z];
                         }
                     }
+                }
+            }
+
+            // Prune Exterior Connections
+            for(let key in connectionsDict){
+                let x = (connectionsDict[key][0] + connectionsDict[key][3]) * 0.5;
+                let y = (connectionsDict[key][1] + connectionsDict[key][4]) * 0.5;
+                let z = (connectionsDict[key][2] + connectionsDict[key][5]) * 0.5;
+                if(!this.checkIsInside(x, y, z, invWorld, this.tempVec, this.tempVec2, this.closestPointData, this.triangleData)){
+                    delete connectionsDict[key];
                 }
             }
 

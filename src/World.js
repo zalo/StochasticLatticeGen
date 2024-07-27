@@ -26,27 +26,37 @@ export default class World {
         this.spotLight.angle = Math.PI / 5;
         this.spotLight.penumbra = 0.2;
         this.spotLight.position.set( -2, 3, -3 );
-        this.spotLight.castShadow = true;
-        this.spotLight.shadow.camera.near = 1;
-        this.spotLight.shadow.camera.far = 20;
-        this.spotLight.shadow.mapSize.width = 1024;
-        this.spotLight.shadow.mapSize.height = 1024;
+        //this.spotLight.castShadow = true;
+        //this.spotLight.shadow.camera.near = 1;
+        //this.spotLight.shadow.camera.far = 20;
+        //this.spotLight.shadow.mapSize.width = 1024;
+        //this.spotLight.shadow.mapSize.height = 1024;
         this.scene.add( this.spotLight );
+
+        this.spotLight2 = new THREE.SpotLight( 0xffffff, Math.PI * 10.0 );
+        this.spotLight2.angle = Math.PI / 5;
+        this.spotLight2.penumbra = 0.2;
+        this.spotLight2.position.set( 0, 3, 3 );
+        //this.spotLight2.castShadow = true;
+        //this.spotLight2.shadow.camera.near = 1;
+        //this.spotLight2.shadow.camera.far = 20;
+        //this.spotLight2.shadow.mapSize.width = 1024;
+        //this.spotLight2.shadow.mapSize.height = 1024;
+        this.scene.add( this.spotLight2 );
 
         this.dirLight = new THREE.DirectionalLight( 0x55505a, Math.PI * 10.0 );
         this.dirLight.position.set( 0, 3, 0 );
-        this.dirLight.castShadow = true;
-        this.dirLight.shadow.camera.near = -10;
-        this.dirLight.shadow.camera.far = 10;
-
-        this.dirLight.shadow.camera.right = 3;
-        this.dirLight.shadow.camera.left = - 3;
-        this.dirLight.shadow.camera.top	= 3;
-        this.dirLight.shadow.camera.bottom = - 3;
-
-        this.dirLight.shadow.mapSize.width = 1024;
-        this.dirLight.shadow.mapSize.height = 1024;
+        //this.dirLight.castShadow = true;
+        //this.dirLight.shadow.camera.near = -10;
+        //this.dirLight.shadow.camera.far = 10;
+        //this.dirLight.shadow.camera.right = 3;
+        //this.dirLight.shadow.camera.left = - 3;
+        //this.dirLight.shadow.camera.top	= 3;
+        //this.dirLight.shadow.camera.bottom = - 3;
+        //this.dirLight.shadow.mapSize.width = 1024;
+        //this.dirLight.shadow.mapSize.height = 1024;
         this.scene.add( this.dirLight );
+
         
         // Geometry
 
