@@ -53,6 +53,8 @@ jobs:
         run: |
           sed -e 's/\/src\//\/build\//g' index.html > index.html.tmp
           mv index.html.tmp index.html
+          mkdir -p build
+          cp /assets/voro3d/dist/voro_raw.wasm build/voro_raw.wasm
       - name: Run esbuild
         run: npm run build
       - name: Setup Pages
