@@ -7,6 +7,6 @@
 		"esbuild": "^0.23.0",
 		"three": "^0.166.0",
 		"three-mesh-bvh": "^0.7.6",
-		"voro3d": "^0.0.5"
+		"voro3d": "github:zalo/Voro3D#main"
 	}
 }

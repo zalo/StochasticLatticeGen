@@ -9,11 +9,11 @@
       <img src="https://img.shields.io/github/license/zalo/StochasticLatticeGen" title="License: Apache V2"></a>-->  <!-- No idea what license this should be! -->
 </p>
 
-Generate stochastic beam lattice structures (with variable density that follows fields.*)
+Generate stochastic beam lattice structures in the browser!
 
 TODO:
-- Cut the Voronoi Cells by the Surface of the Mesh (Expose Additional Voro++ functionality?)
 - Spawn the voronoi centers with variable density according to a density field (density check first, then interior check)
+- Allow importing meshes and saving lattices
 
  # Building
 
