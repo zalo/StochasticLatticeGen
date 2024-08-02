@@ -15,7 +15,7 @@ export default class World {
         
         // camera and world
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color( 0x000000 );
+        this.scene.background = new THREE.Color( 0xAFB6C8 );
 
         this.camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.01, 1000 );
         this.camera.position.set( 0.0, 1, -2 );
@@ -36,18 +36,21 @@ export default class World {
         this.dirLight = new THREE.DirectionalLight( 0x55505a, Math.PI * 10.0 );
         this.dirLight.position.set( 0, 3, 0 );
         this.dirLight.castShadow = true;
-        this.dirLight.shadow.camera.near = -10;
-        this.dirLight.shadow.camera.far = 10;
-
+        this.dirLight.shadow.camera.near  = -10;
+        this.dirLight.shadow.camera.far   = 10;
         this.dirLight.shadow.camera.right = 3;
-        this.dirLight.shadow.camera.left = - 3;
-        this.dirLight.shadow.camera.top	= 3;
+        this.dirLight.shadow.camera.left  = - 3;
+        this.dirLight.shadow.camera.top	  = 3;
         this.dirLight.shadow.camera.bottom = - 3;
-
         this.dirLight.shadow.mapSize.width = 1024;
         this.dirLight.shadow.mapSize.height = 1024;
         this.scene.add( this.dirLight );
         
+
+        this.hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444 );
+        this.hemiLight.position.set( 0, 20, 0 );
+        this.scene.add( this.hemiLight );
+
         // Geometry
 
         this.ground = new THREE.Mesh(
@@ -111,6 +114,28 @@ export default class World {
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
+    }
+
+    scaleScene(scale){
+        this.ground.scale.set(scale, scale, scale);
+        this.ground.position.y = -0.75 * scale;
+        this.helper.scale.set(scale, scale, scale);
+        this.helper.position.y = -0.74 * scale;
+        this.camera.position.multiplyScalar(scale);
+        this.controls.target.set(0, 0.5 * scale, 0);
+        this.camera.near *= scale;
+        this.camera.far  *= scale;
+
+        this.dirLight.shadow.camera.near    *= scale;
+        this.dirLight.shadow.camera.far     *= scale;
+        this.dirLight.shadow.camera.right   *= scale;
+        this.dirLight.shadow.camera.left    *= scale;
+        this.dirLight.shadow.camera.top	    *= scale;
+        this.dirLight.shadow.camera.bottom  *= scale;
+        this.spotLight.position.multiplyScalar(scale);
+        this.spotLight.distance             *= scale;
+        //this.spotLight.shadow.camera.near   *= scale;
+        this.spotLight.shadow.camera.far    *= scale;
     }
 
 }

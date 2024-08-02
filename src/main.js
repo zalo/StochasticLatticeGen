@@ -5,10 +5,10 @@ import { OBJLoader } from '../node_modules/three/examples/jsm/loaders/OBJLoader.
 import { Voro3D } from '../node_modules/voro3d/dist/index.js';
 
 // Import the BVH Acceleration Structure and monkey-patch the Mesh class with it
-import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from '../node_modules/three-mesh-bvh/build/index.module.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from '../node_modules/three-mesh-bvh/build/index.module.js';
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 /** The fundamental set up and animation structures for 3D Visualization */
 export default class Main {
@@ -70,22 +70,25 @@ export default class Main {
         this.mesh = mesh;
 
         this.mesh.material = new THREE.MeshPhysicalMaterial({ color: 0xf78a1d, transparent: true, opacity: 0.5, side: THREE.FrontSide });
-        this.centerMesh(this.mesh);
+        //this.centerMesh(this.mesh);
         this.world.scene.add( this.mesh ); 
         let index = this.mesh.geometry.getIndex();
         if(index == null){
             index = new THREE.BufferAttribute(new Uint32Array(this.mesh.geometry.getAttribute("position").array.length / 3), 1);
             for(let i = 0; i < index.count; i++){ index.array[i] = i; }
         }
-        this.mesh.geometry.computeBoundsTree(); console.log("Triggered builds of BVH!");
+        this.mesh.geometry.computeBoundsTree( { maxLeafTris: 1, strategy: SAH } ); console.log("Triggered builds of BVH!");
+        //this.mesh.geometry.computeBoundsTree(); 
 
         let tempMat = new THREE.Matrix4();
         let tempVec = new THREE.Vector3();
         let tempVec2 = new THREE.Vector3();
         let tempVec3 = new THREE.Vector3(1,1,1);
         let zeroRotation = new THREE.Quaternion();
-        let scale = new THREE.Vector3( 1, 1, 1 ).multiplyScalar(0.01);
         let bbox = new THREE.Box3().setFromObject(this.mesh, true);
+        this.sceneScale = bbox.getSize(tempVec2).length() / 3.0;
+        this.world.scaleScene(this.sceneScale);
+        let scale = new THREE.Vector3( 1, 1, 1 ).multiplyScalar(0.004 * this.sceneScale);
         let boxSize = bbox.getSize(tempVec2);
         let boxMinCorner = bbox.min;
         let boxMaxCorner = bbox.max;
@@ -120,6 +123,51 @@ export default class Main {
             let cells = this.voro.computeCells(points, true);
             //console.log(cells);
 
+            let voronoiMeshVertices = [];
+            let voronoiMeshIndices  = [];
+            let voronoiMeshNormals  = [];
+            let curIdx = 0; 
+
+            // Accumulate the faces
+            let facesDict = {};
+            for(let i = 0; i < cells.length; i++){
+                let cell = cells[i];
+                for(let j = 0; j < cells[i].nFaces; j++){
+                    let face = cell.faces[j];
+
+                    let faceKey = Math.max(cells[i].particleID, cells[i].neighbors[j]) + "-" + Math.min(cells[i].particleID, cells[i].neighbors[j]);
+
+                    let dir1 = new THREE.Vector3().fromArray(cells[i].vertices[face[1]*3  ] - cells[i].vertices[face[0]*3  ],
+                                                             cells[i].vertices[face[1]*3+1] - cells[i].vertices[face[0]*3+1],
+                                                             cells[i].vertices[face[1]*3+2] - cells[i].vertices[face[0]*3+2]);
+                    let dir2 = new THREE.Vector3().fromArray(cells[i].vertices[face[2]*3  ] - cells[i].vertices[face[0]*3  ],
+                                                             cells[i].vertices[face[2]*3+1] - cells[i].vertices[face[0]*3+1],
+                                                             cells[i].vertices[face[2]*3+2] - cells[i].vertices[face[0]*3+2]);
+                    let normal = new THREE.Vector3().crossVectors(dir1, dir2).normalize();
+
+                    if (!(faceKey in facesDict)) {
+                        facesDict[faceKey] = curIdx;
+                        // Push the vertices
+                        for(let k = 0; k < face.length; k++){
+                            voronoiMeshVertices.push(cells[i].vertices[face[k]*3  ]);
+                            voronoiMeshVertices.push(cells[i].vertices[face[k]*3+1]);
+                            voronoiMeshVertices.push(cells[i].vertices[face[k]*3+2]);
+                            voronoiMeshNormals.push(normal.x);
+                            voronoiMeshNormals.push(normal.y);
+                            voronoiMeshNormals.push(normal.z);
+                        }
+
+                        // Push the vertex fan indices
+                        for(let k = 1; k < face.length - 1; k++){
+                            voronoiMeshIndices.push(curIdx);
+                            voronoiMeshIndices.push(curIdx + k);
+                            voronoiMeshIndices.push(curIdx + k + 1);
+                        }
+                        curIdx += face.length;
+                    }
+                }
+            }
+
             // Accumulate the connections
             let connectionsDict = {};
             for(let i = 0; i < cells.length; i++){
@@ -153,16 +201,75 @@ export default class Main {
                 }
             }
 
+            let voronoiGeo = new THREE.BufferGeometry();
+            voronoiGeo.setAttribute('position', new THREE.Float32BufferAttribute(voronoiMeshVertices, 3));
+            voronoiGeo.setAttribute('normal', new THREE.Float32BufferAttribute(voronoiMeshNormals, 3));
+            voronoiGeo.setIndex(voronoiMeshIndices);
+            this.tetMesh = new THREE.Mesh(voronoiGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }));
+            voronoiGeo.computeBoundsTree( { maxLeafTris: 1, strategy: SAH } );
+            this.computeIntersectionContours(this.mesh, this.tetMesh);
+
             let connections = Object.keys(connectionsDict).map((key) => { return connectionsDict[key]; });
 
-            //console.log(connections);
+            // Prune connections based on insidedness
+            let prunedConnections = [];
+            //tempVec = new THREE.Vector3();
+            //tempVec2 = new THREE.Vector3();
+            //tempVec3 = new THREE.Vector3(1,1,1);
+            for(let i = 0; i < connections.length; i++){
+                let x = (connections[i][0]);
+                let y = (connections[i][1]);
+                let z = (connections[i][2]);
+
+                let xd = (connections[i][3] - connections[i][0]);
+                let yd = (connections[i][4] - connections[i][1]);
+                let zd = (connections[i][5] - connections[i][2]);
+                let maxDist = Math.sqrt(xd*xd + yd*yd + zd*zd);
+                raycaster.set(new THREE.Vector3(x, y, z), new THREE.Vector3(xd, yd, zd).normalize());
+
+                this.mesh.material.side = THREE.DoubleSide;
+                let intersects = raycaster.intersectObject(this.mesh);
+                this.mesh.material.side = THREE.FrontSide;
+
+                let startsInside = intersects.length %2 === 1;
+                //let endsInside = intersects[intersects.length - 1].distance < maxDist;
+
+                let curOrigin = new THREE.Vector3(x, y, z);
+                for(let j = 0; j < intersects.length; j++){
+                    if (intersects[j].distance >= maxDist) { 
+                        if ((startsInside && j % 2 === 0) || (!startsInside && j % 2 !== 0)) {
+                            prunedConnections.push([curOrigin.x, curOrigin.y, curOrigin.z, connections[i][3], connections[i][4], connections[i][5]]);
+                        }
+                        break; 
+                    } else{
+                        if ((startsInside && j % 2 === 0) || (!startsInside && j % 2 !== 0)) {
+                            prunedConnections.push([curOrigin.x, curOrigin.y, curOrigin.z, intersects[j].point.x, intersects[j].point.y, intersects[j].point.z]);
+                        }
+                    }
+
+                    curOrigin.copy(intersects[j].point);
+                    
+                }
+            }
+            connections = prunedConnections;
+
+
+            // Add Intersection Contours to the Connections
+            for(let i = 0; i < this.line.geometry.attributes.position.array.length; i+=6){
+                connections.push([this.line.geometry.attributes.position.array[i],
+                                  this.line.geometry.attributes.position.array[i+1],
+                                  this.line.geometry.attributes.position.array[i+2],
+                                  this.line.geometry.attributes.position.array[i+3],
+                                  this.line.geometry.attributes.position.array[i+4],
+                                  this.line.geometry.attributes.position.array[i+5]]);
+            }
 
             let tempMat = new THREE.Matrix4();
             let tempVec = new THREE.Vector3();
             let tempVec2 = new THREE.Vector3();
             let tempRotation = new THREE.Quaternion();
             let yVec = new THREE.Vector3(0, 1, 0);
-            let scale = new THREE.Vector3( 1.0, 1, 1.0 ).multiplyScalar(0.005);
+            let scale = new THREE.Vector3( 1.0, 1, 1.0 ).multiplyScalar(0.004 * this.sceneScale);
             let cylinderGeo = new THREE.CylinderGeometry( 1, 1, 1, 8 );
             this.latticeSpheres = new THREE.InstancedMesh( cylinderGeo, new THREE.MeshStandardMaterial( { color: 0x00ff00, roughness: 1, metalness: 0 } ), connections.length );
             this.latticeSpheres.castShadow = true;
@@ -184,6 +291,52 @@ export default class Main {
                 this.latticeSpheres.setMatrixAt( i, tempMat.compose( tempVec.set(x, y, z ), tempRotation, scale));
             }
         });
+    }
+
+    computeIntersectionContours(mesh1, mesh2){
+        const lineGeometry = new THREE.BufferGeometry();
+        lineGeometry.setFromPoints( [ new THREE.Vector3( 0, 1, 0 ), new THREE.Vector3( 0, - 1, 0 ) ] );
+        this.line = new THREE.LineSegments( lineGeometry, new THREE.LineBasicMaterial( { color: 0x00FF00 } ) );
+        this.world.scene.add( this.line );
+
+        this.world.scene.updateMatrixWorld( true );
+
+        const matrix2to1 = new THREE.Matrix4()
+            .copy( mesh1.matrixWorld )
+            .invert()
+            .multiply( mesh2.matrixWorld );
+    
+        const edge = new THREE.Line3();
+        const results = [];
+        mesh1.geometry.boundsTree.bvhcast( mesh2.geometry.boundsTree, matrix2to1, {
+            intersectsTriangles( triangle1, triangle2 ) {
+                if ( triangle1.intersectsTriangle( triangle2, edge ) ) {
+                    const { start, end } = edge;
+                    results.push(start.x, start.y, start.z,
+                                   end.x,   end.y,   end.z);
+                }
+            }
+        } );
+    
+        if ( results.length ) {
+            const geometry = this.line.geometry;
+            const posArray = geometry.attributes.position.array;
+            if ( posArray.length < results.length ) {
+                geometry.dispose();
+                geometry.setAttribute( 'position', new THREE.BufferAttribute( new Float32Array( results ), 3, false ) );
+            } else {
+                posArray.set( results );
+            }
+    
+            geometry.setDrawRange( 0, results.length / 3 );
+            geometry.attributes.position.needsUpdate = true;
+            //lineGroup.position.copy( group1.position );
+            //lineGroup.rotation.copy( group1.rotation );
+            //lineGroup.scale.copy( group1.scale );
+            //lineGroup.visible = true;
+        } else {
+            //lineGroup.visible = false;
+        }
     }
 
     /** Update the simulation */
