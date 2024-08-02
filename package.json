@@ -1,7 +1,6 @@
 {
 	"scripts": {
-		"build": "esbuild ./src/main.js --bundle --minify --sourcemap --format=esm --outdir=./build --platform=node",
-		"rebuild-voro": "esbuild ./node_modules/voro3d/src/index.ts --bundle --minify --sourcemap --format=esm --outdir=./node_modules/voro3d/dist --platform=node"
+		"build": "esbuild ./src/main.js --bundle --minify --sourcemap --format=esm --outdir=./build --platform=node"
 	},
 	"dependencies": {
 		"esbuild": "^0.23.0",

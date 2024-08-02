@@ -58,6 +58,7 @@ jspm_packages/
 !node_modules/voro3d/*/
 !node_modules/voro3d/dist/*
 
+!build/voro_raw.wasm
 
 # TypeScript v1 declaration files
 typings/

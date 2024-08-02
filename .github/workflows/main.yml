@@ -49,12 +49,12 @@ jobs:
       - name: Install Node Modules
         run: npm install
       # Switching the HTML entrypoint over to the build
-      #- name: Pre-Process Site
-      #  run: |
-      #    sed -e 's/\/src\//\/build\//g' index.html > index.html.tmp
-      #    mv index.html.tmp index.html
-      #- name: Run esbuild
-      #  run: npm run build
+      - name: Pre-Process Site
+        run: |
+          sed -e 's/\/src\//\/build\//g' index.html > index.html.tmp
+          mv index.html.tmp index.html
+      - name: Run esbuild
+        run: npm run build
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
