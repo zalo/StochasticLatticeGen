@@ -1,0 +1,36 @@
+{
+  "name": "voro3d",
+  "version": "0.0.6",
+  "description": "An addition to my Voro-Emscripten repository. A small wrapper around the voro++ bindings as well as typescript definitions.",
+  "exports": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "prepack": "yarn build",
+    "build": "rollup -c"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukPopp0/voro3d.git"
+  },
+  "author": "Lukas Popp",
+  "license": "SEE LICENSE IN LICENSE",
+  "bugs": {
+    "url": "https://github.com/LukPopp0/voro3d/issues"
+  },
+  "homepage": "https://github.com/LukPopp0/voro3d#readme",
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^11.1.2",
+    "rollup": "^3.26.2",
+    "rollup-plugin-copy": "^3.4.0",
+    "tslib": "^2.6.0",
+    "typescript": "^5.1.6"
+  },
+  "keywords": [
+    "voronoi",
+    "geometry",
+    "voro",
+    "voro++"
+  ]
+}
