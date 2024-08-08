@@ -4,7 +4,8 @@
 	},
 	"dependencies": {
 		"esbuild": "^0.23.0",
-		"three": "^0.166.0",
+		"three": "^0.155.0",
+		"three-bvh-csg": "^0.0.16",
 		"three-mesh-bvh": "^0.7.6"
 	}
 }

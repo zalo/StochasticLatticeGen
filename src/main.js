@@ -5,10 +5,12 @@ import { OBJLoader } from '../node_modules/three/examples/jsm/loaders/OBJLoader.
 import { Voro3D } from '../assets/voro3d/dist/index.js';
 
 // Import the BVH Acceleration Structure and monkey-patch the Mesh class with it
-import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from '../node_modules/three-mesh-bvh/build/index.module.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from 'three-mesh-bvh';
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+
+import { INTERSECTION, Brush, Evaluator } from 'three-bvh-csg';
 
 /** The fundamental set up and animation structures for 3D Visualization */
 export default class Main {
@@ -71,7 +73,7 @@ export default class Main {
 
         this.mesh.material = new THREE.MeshPhysicalMaterial({ color: 0xf78a1d, transparent: true, opacity: 0.5, side: THREE.FrontSide });
         //this.centerMesh(this.mesh);
-        this.world.scene.add( this.mesh ); 
+        //this.world.scene.add( this.mesh ); 
         let index = this.mesh.geometry.getIndex();
         if(index == null){
             index = new THREE.BufferAttribute(new Uint32Array(this.mesh.geometry.getAttribute("position").array.length / 3), 1);
@@ -126,16 +128,17 @@ export default class Main {
             let voronoiMeshVertices = [];
             let voronoiMeshIndices  = [];
             let voronoiMeshNormals  = [];
-            let curIdx = 0; 
+            let curIdx = 0; let curIdx2 = 0;
 
             // Accumulate the faces
-            let facesDict = {};
+            //let facesDict = {};
+            let vertexDict = {};
             for(let i = 0; i < cells.length; i++){
                 let cell = cells[i];
                 for(let j = 0; j < cells[i].nFaces; j++){
                     let face = cell.faces[j];
 
-                    let faceKey = Math.max(cells[i].particleID, cells[i].neighbors[j]) + "-" + Math.min(cells[i].particleID, cells[i].neighbors[j]);
+                    //let faceKey = Math.max(cells[i].particleID, cells[i].neighbors[j]) + "-" + Math.min(cells[i].particleID, cells[i].neighbors[j]);
 
                     let dir1 = new THREE.Vector3().fromArray(cells[i].vertices[face[1]*3  ] - cells[i].vertices[face[0]*3  ],
                                                              cells[i].vertices[face[1]*3+1] - cells[i].vertices[face[0]*3+1],
@@ -143,32 +146,39 @@ export default class Main {
                     let dir2 = new THREE.Vector3().fromArray(cells[i].vertices[face[2]*3  ] - cells[i].vertices[face[0]*3  ],
                                                              cells[i].vertices[face[2]*3+1] - cells[i].vertices[face[0]*3+1],
                                                              cells[i].vertices[face[2]*3+2] - cells[i].vertices[face[0]*3+2]);
-                    let normal = new THREE.Vector3().crossVectors(dir1, dir2).normalize();
+                    let normal = new THREE.Vector3().crossVectors(dir2, dir1).normalize();
 
-                    if (!(faceKey in facesDict)) {
-                        facesDict[faceKey] = curIdx;
-                        // Push the vertices
-                        for(let k = 0; k < face.length; k++){
+
+                    // Push the vertices
+                    for(let k = 0; k < face.length; k++){
+                        let vertexKey = cells[i].vertices[face[k]*3  ] + "-" + cells[i].vertices[face[k]*3+1] + "-" + cells[i].vertices[face[k]*3+2];
+                        if (!(vertexKey in vertexDict)) {
                             voronoiMeshVertices.push(cells[i].vertices[face[k]*3  ]);
                             voronoiMeshVertices.push(cells[i].vertices[face[k]*3+1]);
                             voronoiMeshVertices.push(cells[i].vertices[face[k]*3+2]);
-                            voronoiMeshNormals.push(normal.x);
-                            voronoiMeshNormals.push(normal.y);
-                            voronoiMeshNormals.push(normal.z);
+                            voronoiMeshNormals .push(normal.x);
+                            voronoiMeshNormals .push(normal.y);
+                            voronoiMeshNormals .push(normal.z);
+                            vertexDict[vertexKey] = curIdx2;
+                            curIdx2 += 1;
                         }
-
-                        // Push the vertex fan indices
-                        for(let k = 1; k < face.length - 1; k++){
-                            voronoiMeshIndices.push(curIdx);
-                            voronoiMeshIndices.push(curIdx + k);
-                            voronoiMeshIndices.push(curIdx + k + 1);
-                        }
-                        curIdx += face.length;
                     }
+
+                    // Push the vertex fan indices
+                    for(let k = 1; k < face.length - 1; k++){
+                        let vertex1Key = cells[i].vertices[face[0  ]*3] + "-" + cells[i].vertices[face[0  ]*3+1] + "-" + cells[i].vertices[face[0  ]*3+2];
+                        let vertex2Key = cells[i].vertices[face[k  ]*3] + "-" + cells[i].vertices[face[k  ]*3+1] + "-" + cells[i].vertices[face[k  ]*3+2];
+                        let vertex3Key = cells[i].vertices[face[k+1]*3] + "-" + cells[i].vertices[face[k+1]*3+1] + "-" + cells[i].vertices[face[k+1]*3+2];
+                        voronoiMeshIndices.push(vertexDict[vertex1Key]);
+                        voronoiMeshIndices.push(vertexDict[vertex2Key]);
+                        voronoiMeshIndices.push(vertexDict[vertex3Key]);
+                    }
+                    curIdx += face.length;
+
                 }
             }
 
-            // Accumulate the connections
+            /*// Accumulate the connections
             let connectionsDict = {};
             for(let i = 0; i < cells.length; i++){
                 let cell = cells[i];
@@ -199,97 +209,113 @@ export default class Main {
                         }
                     }
                 }
-            }
+            }*/
 
             let voronoiGeo = new THREE.BufferGeometry();
             voronoiGeo.setAttribute('position', new THREE.Float32BufferAttribute(voronoiMeshVertices, 3));
             voronoiGeo.setAttribute('normal', new THREE.Float32BufferAttribute(voronoiMeshNormals, 3));
+            voronoiGeo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((voronoiMeshVertices.length/3)*2)), 2);
+            this.mesh.geometry.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(this.mesh.geometry.getAttribute('position').count*2)), 2);
             voronoiGeo.setIndex(voronoiMeshIndices);
-            this.tetMesh = new THREE.Mesh(voronoiGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }));
+            this.voroMesh = new THREE.Mesh(voronoiGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }));
             voronoiGeo.computeBoundsTree( { maxLeafTris: 1, strategy: SAH } );
-            this.computeIntersectionContours(this.mesh, this.tetMesh);
+            //this.world.scene.add(this.voroMesh);
+            //this.computeIntersectionContours(this.mesh, this.voroMesh);
 
-            let connections = Object.keys(connectionsDict).map((key) => { return connectionsDict[key]; });
-
-            // Prune connections based on insidedness
-            let prunedConnections = [];
-            //tempVec = new THREE.Vector3();
-            //tempVec2 = new THREE.Vector3();
-            //tempVec3 = new THREE.Vector3(1,1,1);
-            for(let i = 0; i < connections.length; i++){
-                let x = (connections[i][0]);
-                let y = (connections[i][1]);
-                let z = (connections[i][2]);
-
-                let xd = (connections[i][3] - connections[i][0]);
-                let yd = (connections[i][4] - connections[i][1]);
-                let zd = (connections[i][5] - connections[i][2]);
-                let maxDist = Math.sqrt(xd*xd + yd*yd + zd*zd);
-                raycaster.set(new THREE.Vector3(x, y, z), new THREE.Vector3(xd, yd, zd).normalize());
-
-                this.mesh.material.side = THREE.DoubleSide;
-                let intersects = raycaster.intersectObject(this.mesh);
-                this.mesh.material.side = THREE.FrontSide;
-
-                let startsInside = intersects.length %2 === 1;
-                //let endsInside = intersects[intersects.length - 1].distance < maxDist;
-
-                let curOrigin = new THREE.Vector3(x, y, z);
-                for(let j = 0; j < intersects.length; j++){
-                    if (intersects[j].distance >= maxDist) { 
-                        if ((startsInside && j % 2 === 0) || (!startsInside && j % 2 !== 0)) {
-                            prunedConnections.push([curOrigin.x, curOrigin.y, curOrigin.z, connections[i][3], connections[i][4], connections[i][5]]);
-                        }
-                        break; 
-                    } else{
-                        if ((startsInside && j % 2 === 0) || (!startsInside && j % 2 !== 0)) {
-                            prunedConnections.push([curOrigin.x, curOrigin.y, curOrigin.z, intersects[j].point.x, intersects[j].point.y, intersects[j].point.z]);
-                        }
-                    }
-
-                    curOrigin.copy(intersects[j].point);
-                    
-                }
-            }
-            connections = prunedConnections;
+            let brush1 = new Brush( this.mesh.geometry );
+            let brush2 = new Brush( voronoiGeo );//voronoiGeo );
+            brush2.position.x += 0.1;
+            brush1.updateMatrixWorld();
+            brush2.updateMatrixWorld();
+            let evaluator = new Evaluator();
+            let result = evaluator.evaluate( brush1, brush2, INTERSECTION );
+            console.log(result);
+            result.material[0].wireframe = true;
+            result.material[1].wireframe = true;
+            this.world.scene.add( result );
 
 
-            // Add Intersection Contours to the Connections
-            for(let i = 0; i < this.line.geometry.attributes.position.array.length; i+=6){
-                connections.push([this.line.geometry.attributes.position.array[i],
-                                  this.line.geometry.attributes.position.array[i+1],
-                                  this.line.geometry.attributes.position.array[i+2],
-                                  this.line.geometry.attributes.position.array[i+3],
-                                  this.line.geometry.attributes.position.array[i+4],
-                                  this.line.geometry.attributes.position.array[i+5]]);
-            }
+            //let connections = Object.keys(connectionsDict).map((key) => { return connectionsDict[key]; });
 
-            let tempMat = new THREE.Matrix4();
-            let tempVec = new THREE.Vector3();
-            let tempVec2 = new THREE.Vector3();
-            let tempRotation = new THREE.Quaternion();
-            let yVec = new THREE.Vector3(0, 1, 0);
-            let scale = new THREE.Vector3( 1.0, 1, 1.0 ).multiplyScalar(0.004 * this.sceneScale);
-            let cylinderGeo = new THREE.CylinderGeometry( 1, 1, 1, 8 );
-            this.latticeSpheres = new THREE.InstancedMesh( cylinderGeo, new THREE.MeshStandardMaterial( { color: 0x00ff00, roughness: 1, metalness: 0 } ), connections.length );
-            this.latticeSpheres.castShadow = true;
-            this.latticeSpheres.receiveShadow = true;
-            this.world.scene.add( this.latticeSpheres );
+            //// Prune connections based on insidedness
+            //let prunedConnections = [];
+            ////tempVec = new THREE.Vector3();
+            ////tempVec2 = new THREE.Vector3();
+            ////tempVec3 = new THREE.Vector3(1,1,1);
+            //for(let i = 0; i < connections.length; i++){
+            //    let x = (connections[i][0]);
+            //    let y = (connections[i][1]);
+            //    let z = (connections[i][2]);
 
-            for(let i = 0; i < connections.length; i++){
-                let x = (connections[i][0] + connections[i][3]) * 0.5;
-                let y = (connections[i][1] + connections[i][4]) * 0.5;
-                let z = (connections[i][2] + connections[i][5]) * 0.5;
+            //    let xd = (connections[i][3] - connections[i][0]);
+            //    let yd = (connections[i][4] - connections[i][1]);
+            //    let zd = (connections[i][5] - connections[i][2]);
+            //    let maxDist = Math.sqrt(xd*xd + yd*yd + zd*zd);
+            //    raycaster.set(new THREE.Vector3(x, y, z), new THREE.Vector3(xd, yd, zd).normalize());
 
-                let xd = (connections[i][0] - connections[i][3]);
-                let yd = (connections[i][1] - connections[i][4]);
-                let zd = (connections[i][2] - connections[i][5]);
-                tempRotation.setFromUnitVectors(yVec, tempVec2.set(xd, yd, zd).normalize());
+            //    this.mesh.material.side = THREE.DoubleSide;
+            //    let intersects = raycaster.intersectObject(this.mesh);
+            //    this.mesh.material.side = THREE.FrontSide;
 
-                scale.y = tempVec2.set(xd, yd, zd).length();
+            //    let startsInside = intersects.length %2 === 1;
+            //    //let endsInside = intersects[intersects.length - 1].distance < maxDist;
+
+            //    let curOrigin = new THREE.Vector3(x, y, z);
+            //    for(let j = 0; j < intersects.length; j++){
+            //        if (intersects[j].distance >= maxDist) { 
+            //            if ((startsInside && j % 2 === 0) || (!startsInside && j % 2 !== 0)) {
+            //                prunedConnections.push([curOrigin.x, curOrigin.y, curOrigin.z, connections[i][3], connections[i][4], connections[i][5]]);
+            //            }
+            //            break; 
+            //        } else{
+            //            if ((startsInside && j % 2 === 0) || (!startsInside && j % 2 !== 0)) {
+            //                prunedConnections.push([curOrigin.x, curOrigin.y, curOrigin.z, intersects[j].point.x, intersects[j].point.y, intersects[j].point.z]);
+            //            }
+            //        }
+
+            //        curOrigin.copy(intersects[j].point);
+            //        
+            //    }
+            //}
+            //connections = prunedConnections;
+
+
+            //// Add Intersection Contours to the Connections
+            //for(let i = 0; i < this.line.geometry.attributes.position.array.length; i+=6){
+            //    connections.push([this.line.geometry.attributes.position.array[i],
+            //                      this.line.geometry.attributes.position.array[i+1],
+            //                      this.line.geometry.attributes.position.array[i+2],
+            //                      this.line.geometry.attributes.position.array[i+3],
+            //                      this.line.geometry.attributes.position.array[i+4],
+            //                      this.line.geometry.attributes.position.array[i+5]]);
+            //}
+
+            //let tempMat = new THREE.Matrix4();
+            //let tempVec = new THREE.Vector3();
+            //let tempVec2 = new THREE.Vector3();
+            //let tempRotation = new THREE.Quaternion();
+            //let yVec = new THREE.Vector3(0, 1, 0);
+            //let scale = new THREE.Vector3( 1.0, 1, 1.0 ).multiplyScalar(0.004 * this.sceneScale);
+            //let cylinderGeo = new THREE.CylinderGeometry( 1, 1, 1, 8 );
+            //this.latticeSpheres = new THREE.InstancedMesh( cylinderGeo, new THREE.MeshStandardMaterial( { color: 0x00ff00, roughness: 1, metalness: 0 } ), connections.length );
+            //this.latticeSpheres.castShadow = true;
+            //this.latticeSpheres.receiveShadow = true;
+            //this.world.scene.add( this.latticeSpheres );
+
+            //for(let i = 0; i < connections.length; i++){
+            //    let x = (connections[i][0] + connections[i][3]) * 0.5;
+            //    let y = (connections[i][1] + connections[i][4]) * 0.5;
+            //    let z = (connections[i][2] + connections[i][5]) * 0.5;
+
+            //    let xd = (connections[i][0] - connections[i][3]);
+            //    let yd = (connections[i][1] - connections[i][4]);
+            //    let zd = (connections[i][2] - connections[i][5]);
+            //    tempRotation.setFromUnitVectors(yVec, tempVec2.set(xd, yd, zd).normalize());
+
+            //    scale.y = tempVec2.set(xd, yd, zd).length();
     
-                this.latticeSpheres.setMatrixAt( i, tempMat.compose( tempVec.set(x, y, z ), tempRotation, scale));
-            }
+            //    this.latticeSpheres.setMatrixAt( i, tempMat.compose( tempVec.set(x, y, z ), tempRotation, scale));
+            //}
         });
     }
 
