@@ -3,6 +3,7 @@ import { GUI } from '../node_modules/three/examples/jsm/libs/lil-gui.module.min.
 import World from './World.js';
 import { OBJLoader } from '../node_modules/three/examples/jsm/loaders/OBJLoader.js';
 import { Voro3D } from '../assets/voro3d/dist/index.js';
+import { MeshSurfaceSampler } from '../node_modules/three/examples/jsm/math/MeshSurfaceSampler.js';
 
 // Import the BVH Acceleration Structure and monkey-patch the Mesh class with it
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from '../node_modules/three-mesh-bvh/build/index.module.js';
@@ -21,16 +22,19 @@ export default class Main {
             this.display((path[path.length - 1] + ":" + event.lineno + " - " + event.message));
         });
         console.error = this.fakeError.bind(this);
-        this.physicsScene = { softBodies: [] };
         this.deferredConstructor();
     }
     async deferredConstructor() {
         // Configure Settings
-        this.meshingParams = {
-            numPoints: 1000
+        this.latticeParams = {
+            loadMesh: this.loadMesh.bind(this),
+            voronoiMode: 0,
+            numPoints: 500
         };
         this.gui = new GUI();
-        this.gui.add(this.meshingParams, 'numPoints', 5, 10000, 1).onFinishChange((value) => {
+        this.gui.add( this.latticeParams, 'loadMesh' ).name( 'Load Mesh' )
+        this.gui.add( this.latticeParams, 'voronoiMode', { Surface: 0, Volume: 1 } ).name( 'Sampling Mode' );
+        this.gui.add(this.latticeParams, 'numPoints', 5, 10000, 1).name( 'Num Points' ).onFinishChange((value) => {
             if(this.mesh){ this.generateLattice(this.mesh); }});
         //this.gui.add(this.meshingParams, 'TargetTriangles', 100, 5000, 100).onFinishChange((value) => {
         //    if(this.mesh){ this.generateTetMesh(this.mesh); }});
@@ -39,16 +43,16 @@ export default class Main {
         //this.gui.add(this.meshingParams, 'MinTetVolume').onFinishChange((value) => {
         //    if(this.mesh){ this.generateTetMesh(this.mesh); }});
 
+        this.sphereGeo = new THREE.SphereGeometry(1.0, 32, 32);
+        this.cylinderGeo = new THREE.CylinderGeometry( 1, 1, 1, 8 );
+
         // Construct the render world
         this.world = new World(this);
 
-        this.sphereGeo = new THREE.SphereGeometry(1.0, 32, 32);
-        this.voronoiSpheres = new THREE.InstancedMesh( this.sphereGeo, new THREE.MeshStandardMaterial( { color: 0xff0000, roughness: 1, metalness: 0 } ), this.meshingParams.numPoints );
-        this.voronoiSpheres.castShadow = true;
-        this.voronoiSpheres.receiveShadow = true;
-        this.voronoiSpheres.visible = false;
-        this.world.scene.add( this.voronoiSpheres );
+        this.loadMesh(this.mesh);
+    }
 
+    loadMesh(mesh){
         // load a resource
         new OBJLoader().load( './assets/armadillo.obj',
             ( object ) => { this.generateLattice(object.children[0]); },
@@ -60,25 +64,42 @@ export default class Main {
     generateLattice(mesh){
         if(this.mesh){
             this.world.scene.remove(this.mesh);
-            this.mesh.geometry.dispose();
-            this.mesh.material.dispose();
             this.world.scene.remove(this.tetMesh);
+            this.world.scene.remove(this.voronoiSpheres);
+            this.world.scene.remove(this.latticeCylinders);
+            this.world.scene.remove(this.line);
+
+            this.mesh.geometry .dispose();
+            this.mesh.material .dispose();
+            this.voronoiSpheres.dispose();
+            this.latticeCylinders.dispose();
+            this.voronoiGeo.dispose();
+            this.line.geometry.dispose();
+
+            this.world.scaleScene(1.0/this.sceneScale);
+
             //this.tetMesh.geometry.dispose();
             //this.tetMesh.material.dispose();
         }
 
+        // STEP 0. Create the Mesh and place it in the scene
         this.mesh = mesh;
-
         this.mesh.material = new THREE.MeshPhysicalMaterial({ color: 0xf78a1d, transparent: true, opacity: 0.5, side: THREE.FrontSide });
-        //this.centerMesh(this.mesh);
-        this.world.scene.add( this.mesh ); 
+        this.world.scene.add( this.mesh );
         let index = this.mesh.geometry.getIndex();
-        if(index == null){
+        if(index == null){ // Add triangle indexing if it does not exist
             index = new THREE.BufferAttribute(new Uint32Array(this.mesh.geometry.getAttribute("position").array.length / 3), 1);
             for(let i = 0; i < index.count; i++){ index.array[i] = i; }
         }
         this.mesh.geometry.computeBoundsTree( { maxLeafTris: 1, strategy: SAH } ); console.log("Triggered builds of BVH!");
-        //this.mesh.geometry.computeBoundsTree(); 
+
+        // STEP 1. Sample a uniform distribution of points on the surface or within the volume of the mesh
+
+        this.voronoiSpheres = new THREE.InstancedMesh( this.sphereGeo, new THREE.MeshStandardMaterial( { color: 0xff0000, roughness: 1, metalness: 0 } ), this.latticeParams.numPoints );
+        this.voronoiSpheres.castShadow = true;
+        this.voronoiSpheres.receiveShadow = true;
+        this.voronoiSpheres.visible = false;
+        this.world.scene.add( this.voronoiSpheres );
 
         let tempMat = new THREE.Matrix4();
         let tempVec = new THREE.Vector3();
@@ -95,28 +116,41 @@ export default class Main {
         let boxCenter = new THREE.Vector3(); bbox.getCenter(boxCenter);
         let raycaster = new THREE.Raycaster()
 
+        // Create a sampler for the Mesh surface (to use if we're sampling surface points)
+        let surfaceSampler = new MeshSurfaceSampler( this.mesh ).build();
+
         let points = [];
-        for(let i = 0; i < this.meshingParams.numPoints; i++){
-            let x = (Math.random() * boxSize.x) - (boxSize.x * 0.5); 
-            let y = (Math.random() * boxSize.y) - (boxSize.y * 0.5); 
-            let z = (Math.random() * boxSize.z) - (boxSize.z * 0.5); 
+        for(let i = 0; i < this.latticeParams.numPoints; i++){
 
-            x += boxCenter.x; y += boxCenter.y; z += boxCenter.z;
-            raycaster.set(tempVec.set(x, y, z), tempVec3);
+            // Voronoi Mode 0: Sample on the surface
+            if(this.latticeParams.voronoiMode === 0){
+                surfaceSampler.sample(tempVec);
+                points.push(tempVec.x); points.push(tempVec.y); points.push(tempVec.z);
+                this.voronoiSpheres.setMatrixAt(i, tempMat.compose(tempVec, zeroRotation, scale));
+            // Voronoi Mode 1: Sample within the volume
+            // Uses rejection sampling to ensure points are within the mesh; pretty slow
+            } else if(this.latticeParams.voronoiMode === 1) {
+                let x = (Math.random() * boxSize.x) - (boxSize.x * 0.5); 
+                let y = (Math.random() * boxSize.y) - (boxSize.y * 0.5); 
+                let z = (Math.random() * boxSize.z) - (boxSize.z * 0.5); 
 
-            this.mesh.material.side = THREE.DoubleSide;
-            let intersects = raycaster.intersectObject(this.mesh);
-            this.mesh.material.side = THREE.FrontSide;
+                x += boxCenter.x; y += boxCenter.y; z += boxCenter.z;
+                raycaster.set(tempVec.set(x, y, z), tempVec3);
 
-            if( intersects.length %2 === 1) { // Points is in object
-                points.push(x); points.push(y); points.push(z);
-                this.voronoiSpheres.setMatrixAt( i, tempMat.compose( tempVec.set(x, y, z ), zeroRotation, scale));
-            }else{
-                i--; // Point is outside, reject this sample and try again
+                this.mesh.material.side = THREE.DoubleSide;
+                let intersects = raycaster.intersectObject(this.mesh);
+                this.mesh.material.side = THREE.FrontSide;
+
+                if( intersects.length %2 === 1) { // Points is in object
+                    points.push(x); points.push(y); points.push(z);
+                    this.voronoiSpheres.setMatrixAt( i, tempMat.compose( tempVec.set(x, y, z ), zeroRotation, scale));
+                }else{
+                    i--; // Point is outside, reject this sample and try again
+                }
             }
-            this.voronoiSpheres.instanceMatrix.needsUpdate = true;
-            this.voronoiSpheres.visible = true;
         }
+        this.voronoiSpheres.instanceMatrix.needsUpdate = true;
+        this.voronoiSpheres.visible = true;
 
         Voro3D.create(boxMinCorner.x * 1, boxMaxCorner.x* 1, 1 *boxMinCorner.y+0.0001, boxMaxCorner.y* 1, boxMinCorner.z* 1, boxMaxCorner.z* 1, 1, 1, 1).then((voro) => {
             this.voro = voro;
@@ -201,12 +235,12 @@ export default class Main {
                 }
             }
 
-            let voronoiGeo = new THREE.BufferGeometry();
-            voronoiGeo.setAttribute('position', new THREE.Float32BufferAttribute(voronoiMeshVertices, 3));
-            voronoiGeo.setAttribute('normal', new THREE.Float32BufferAttribute(voronoiMeshNormals, 3));
-            voronoiGeo.setIndex(voronoiMeshIndices);
-            this.tetMesh = new THREE.Mesh(voronoiGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }));
-            voronoiGeo.computeBoundsTree( { maxLeafTris: 1, strategy: SAH } );
+            this.voronoiGeo = new THREE.BufferGeometry();
+            this.voronoiGeo.setAttribute('position', new THREE.Float32BufferAttribute(voronoiMeshVertices, 3));
+            this.voronoiGeo.setAttribute('normal', new THREE.Float32BufferAttribute(voronoiMeshNormals, 3));
+            this.voronoiGeo.setIndex(voronoiMeshIndices);
+            this.tetMesh = new THREE.Mesh(this.voronoiGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }));
+            this.voronoiGeo.computeBoundsTree( { maxLeafTris: 1, strategy: SAH } );
             this.computeIntersectionContours(this.mesh, this.tetMesh);
 
             let connections = Object.keys(connectionsDict).map((key) => { return connectionsDict[key]; });
@@ -264,18 +298,19 @@ export default class Main {
                                   this.line.geometry.attributes.position.array[i+5]]);
             }
 
-            let tempMat = new THREE.Matrix4();
-            let tempVec = new THREE.Vector3();
-            let tempVec2 = new THREE.Vector3();
-            let tempRotation = new THREE.Quaternion();
-            let yVec = new THREE.Vector3(0, 1, 0);
-            let scale = new THREE.Vector3( 1.0, 1, 1.0 ).multiplyScalar(0.004 * this.sceneScale);
-            let cylinderGeo = new THREE.CylinderGeometry( 1, 1, 1, 8 );
-            this.latticeSpheres = new THREE.InstancedMesh( cylinderGeo, new THREE.MeshStandardMaterial( { color: 0x00ff00, roughness: 1, metalness: 0 } ), connections.length );
-            this.latticeSpheres.castShadow = true;
-            this.latticeSpheres.receiveShadow = true;
-            this.world.scene.add( this.latticeSpheres );
+            let tempMat         = new THREE.Matrix4();
+            let tempVec         = new THREE.Vector3();
+            let tempVec2        = new THREE.Vector3();
+            let tempRotation    = new THREE.Quaternion();
+            let yVec            = new THREE.Vector3(0, 1, 0);
+            let scale           = new THREE.Vector3( 1.0, 1, 1.0 ).multiplyScalar(0.004 * this.sceneScale);
+            this.latticeCylinders = new THREE.InstancedMesh( this.cylinderGeo, 
+                new THREE.MeshStandardMaterial( { color: 0x00ff00, roughness: 1, metalness: 0 } ), connections.length );
+            this.latticeCylinders.castShadow    = true;
+            this.latticeCylinders.receiveShadow = true;
+            this.world.scene.add( this.latticeCylinders );
 
+            // Set the cylimder positions and rotations according to the connection start/end points
             for(let i = 0; i < connections.length; i++){
                 let x = (connections[i][0] + connections[i][3]) * 0.5;
                 let y = (connections[i][1] + connections[i][4]) * 0.5;
@@ -288,30 +323,30 @@ export default class Main {
 
                 scale.y = tempVec2.set(xd, yd, zd).length();
     
-                this.latticeSpheres.setMatrixAt( i, tempMat.compose( tempVec.set(x, y, z ), tempRotation, scale));
+                this.latticeCylinders.setMatrixAt( i, tempMat.compose( tempVec.set(x, y, z ), tempRotation, scale));
             }
         });
     }
 
     computeIntersectionContours(mesh1, mesh2){
-        const lineGeometry = new THREE.BufferGeometry();
+        let lineGeometry = new THREE.BufferGeometry();
         lineGeometry.setFromPoints( [ new THREE.Vector3( 0, 1, 0 ), new THREE.Vector3( 0, - 1, 0 ) ] );
         this.line = new THREE.LineSegments( lineGeometry, new THREE.LineBasicMaterial( { color: 0x00FF00 } ) );
-        this.world.scene.add( this.line );
+        //this.world.scene.add( this.line );
 
         this.world.scene.updateMatrixWorld( true );
 
-        const matrix2to1 = new THREE.Matrix4()
+        let matrix2to1 = new THREE.Matrix4()
             .copy( mesh1.matrixWorld )
             .invert()
             .multiply( mesh2.matrixWorld );
     
-        const edge = new THREE.Line3();
-        const results = [];
+        let edge = new THREE.Line3();
+        let results = [];
         mesh1.geometry.boundsTree.bvhcast( mesh2.geometry.boundsTree, matrix2to1, {
             intersectsTriangles( triangle1, triangle2 ) {
                 if ( triangle1.intersectsTriangle( triangle2, edge ) ) {
-                    const { start, end } = edge;
+                    let { start, end } = edge;
                     results.push(start.x, start.y, start.z,
                                    end.x,   end.y,   end.z);
                 }
@@ -319,8 +354,8 @@ export default class Main {
         } );
     
         if ( results.length ) {
-            const geometry = this.line.geometry;
-            const posArray = geometry.attributes.position.array;
+            let geometry = this.line.geometry;
+            let posArray = geometry.attributes.position.array;
             if ( posArray.length < results.length ) {
                 geometry.dispose();
                 geometry.setAttribute( 'position', new THREE.BufferAttribute( new Float32Array( results ), 3, false ) );
@@ -330,12 +365,6 @@ export default class Main {
     
             geometry.setDrawRange( 0, results.length / 3 );
             geometry.attributes.position.needsUpdate = true;
-            //lineGroup.position.copy( group1.position );
-            //lineGroup.rotation.copy( group1.rotation );
-            //lineGroup.scale.copy( group1.scale );
-            //lineGroup.visible = true;
-        } else {
-            //lineGroup.visible = false;
         }
     }
 
