@@ -48,7 +48,7 @@ var WorkerWithImportMapViaBedfordsShim = class extends Worker {
    */
   constructor(scriptURL, options = {}) {
     if (!options.importMap || options.importMap === "inherit") {
-      const shimURL = new URL("./WorkerWithImportMapViaBedfordsShim.worker.js", import.meta.url) + "";
+      const shimURL = new URL("../assets/WorkerWithImportMapViaBedfordsShim.worker.js", import.meta.url) + "";
       super(shimURL);
       const importMap = getImportMap();
       const baseURL = document.baseURI.split("/").slice(0, -1).join("/");
