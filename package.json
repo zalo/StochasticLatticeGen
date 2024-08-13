@@ -5,6 +5,7 @@
 	"dependencies": {
 		"esbuild": "^0.23.0",
 		"three": "^0.166.0",
-		"three-mesh-bvh": "^0.7.6"
+		"three-mesh-bvh": "^0.7.6",
+		"worker-with-import-map": "^2.0.1"
 	}
 }
