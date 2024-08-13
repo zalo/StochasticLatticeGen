@@ -61,7 +61,7 @@ export default class Main {
         this.points = [];
 
         this.activePromises = {};
-        this.worker = new Worker("../assets/worker.js", { type: "module" });
+        this.worker = new Worker("./assets/worker.js", { type: "module" });
         this.worker.onmessage = (e) => {
             if(e.data.type === "Initialized") {
                 console.log("Worker is ready!");
