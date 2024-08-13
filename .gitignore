@@ -101,3 +101,4 @@ typings/
 
 [Bb]uild/main.js
 [Bb]uild/main.js.map
+!build/WorkerWithImportMapViaBedfordsShim.worker.js
