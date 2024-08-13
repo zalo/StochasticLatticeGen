@@ -4,7 +4,7 @@ import World from './World.js';
 import { OBJLoader } from '../node_modules/three/examples/jsm/loaders/OBJLoader.js';
 import { Voro3D } from '../assets/voro3d/dist/index.js';
 import { MeshSurfaceSampler } from '../node_modules/three/examples/jsm/math/MeshSurfaceSampler.js';
-import { Worker } from 'worker-with-import-map';
+import { Worker } from "../node_modules/worker-with-import-map/src/index.js";
 
 // Import the BVH Acceleration Structure and monkey-patch the Mesh class with it
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from '../node_modules/three-mesh-bvh/build/index.module.js';
