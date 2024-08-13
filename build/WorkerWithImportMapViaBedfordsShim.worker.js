@@ -9,7 +9,7 @@ function makeRelativePath(baseURL, path, debug) {
   if (path[0] !== '.') {
     return path;
   }
-  const ret = baseURL + '/' + path;
+  const ret = baseURL + '/StochasticLatticeGen/' + path;
   if (debug) {
     console.log(`makeRelativePath> Update path from ${path} to ${ret}`);
   }
