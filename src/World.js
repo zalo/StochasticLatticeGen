@@ -65,7 +65,7 @@ export default class World {
         this.helper = new THREE.GridHelper( 20, 20 );
         this.helper.material.opacity = 1.0;
         this.helper.material.transparent = true;
-        this.helper.position.set(0, 0.002, 0);
+        this.helper.position.set(0, 0.005, 0);
         this.scene.add( this.helper );
 
         // renderer

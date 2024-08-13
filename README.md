@@ -16,6 +16,10 @@ Generate mesh-bounded stochastic lattice structures in the browser!
 TODO:
 - Spawn the voronoi centers with variable density according to a density field (density check first, then interior check)
 - Allow importing meshes and saving lattices
+- Optionally Prune Disconnected Elements
+- Allow List or Mesh Export
+- Allow changing the Mesh Lattice Style (Swept Tets, Cubes, Spheres, Customizable width)
+- Consider Implicit Meshing using Closest Point to Connections and Marching Cubes(?)
 
  # Building
 
