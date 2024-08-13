@@ -1,8 +1,14 @@
 import * as THREE from '../node_modules/three/build/three.module.js';
 import { GUI } from '../node_modules/three/examples/jsm/libs/lil-gui.module.min.js';
 import World from './World.js';
-import { OBJLoader } from '../node_modules/three/examples/jsm/loaders/OBJLoader.js';
 import { Worker } from "./worker-with-import-map.js";
+
+import { OBJLoader } from '../node_modules/three/examples/jsm/loaders/OBJLoader.js';
+import { GLTFLoader } from '../node_modules/three/examples/jsm/loaders/GLTFLoader.js';
+import { FBXLoader } from '../node_modules/three/examples/jsm/loaders/FBXLoader.js';
+import { STLLoader } from '../node_modules/three/examples/jsm/loaders/STLLoader.js';
+import { USDZLoader } from '../node_modules/three/examples/jsm/loaders/USDZLoader.js';
+
 
 // Import the BVH Acceleration Structure and monkey-patch the Mesh class with it
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from '../node_modules/three-mesh-bvh/build/index.module.js';
@@ -26,7 +32,7 @@ export default class Main {
     async deferredConstructor() {
         // Configure Settings
         this.latticeParams = {
-            loadMesh: this.loadMesh.bind(this),
+            //loadMesh: this.loadMesh.bind(this),
             showMesh: true,
             voronoiMode: 0,
             numPoints: 500,
@@ -34,7 +40,7 @@ export default class Main {
             latticeMode: 0,
         };
         this.gui = new GUI();
-        this.gui.add(this.latticeParams, 'loadMesh' ).name( 'Load Mesh' );
+        //this.gui.add(this.latticeParams, 'loadMesh' ).name( 'Load Mesh' );
         this.gui.add(this.latticeParams, 'showMesh').name( 'Show Mesh' ).onFinishChange(async (value) => {
             if(this.mesh){ this.mesh.visible = value; }});
         this.gui.add(this.latticeParams, 'voronoiMode', { Surface: 0, Volume: 1 } ).name( 'Sampling Mode' ).onFinishChange(async (value) => {
@@ -64,7 +70,7 @@ export default class Main {
             if(e.data.type === "Initialized") {
                 console.log("Worker is ready!");
                 this.worker.postMessage({ type: "Debug", data: "Helloooooooo!" });
-                this.loadMesh("ArmadilloMesh"); // Now that the worker is ready, we can load the initial mesh...
+                this.loadFile('armadillo.obj', './assets/armadillo.obj'); // Now that the worker is ready, we can load the initial mesh...
             }else if(e.data.type === "Progress") {
                 this.updateProgress(e.data.message, e.data.progress, 1);
             } else {
@@ -77,46 +83,99 @@ export default class Main {
             }
         };
 
+        document.body.ondragover = (ev) => { ev.preventDefault(); };
+        document.body.ondrop = this.dropHandler.bind(this);
+
         // Construct the render world
         this.world = new World(this);
+    }
+
+    async dropHandler(ev) {
+        ev.preventDefault();
+        for(let i = 0; i < ev.dataTransfer.items.length; i++){
+        let item = ev.dataTransfer.items[i];
+            if (item.kind === "file") {
+                /** @type {File} */
+                let file = item.getAsFile();
+                console.log(`… file[${i}].name = ${file.name}`, file);
+                await this.loadFile(file.name, URL.createObjectURL(file));
+            }
+        }
     }
 
     updateProgress(progressText, current, max){
         this.status.innerHTML = progressText + " - <progress value='" + current + "' max='"+max+"'></progress>";
     }
 
-    async loadMesh(meshName) {
-        new OBJLoader().load( './assets/armadillo.obj',
-            async ( object ) => {
-                if(this.mesh){ this.world.scene.remove(this.mesh); this.mesh.geometry .dispose(); this.mesh.material .dispose(); this.world.scaleScene(1.0/this.sceneScale); }
-                if(this.voronoiSpheres  ){ this.world.scene.remove(this.voronoiSpheres)  ; this.voronoiSpheres  .dispose(); }
-                if(this.tetMesh         ){ this.world.scene.remove(this.tetMesh)         ; }
-                if(this.voronoiGeo  ){ this.voronoiGeo.dispose();}
-                if(this.latticeCylinders){ this.world.scene.remove(this.latticeCylinders); this.latticeCylinders.dispose(); }
-                if(this.line            ){ this.world.scene.remove(this.line)            ; this.line.geometry   .dispose(); }
-        
-                // STEP 0. Create the Mesh and place it in the scene
-                this.mesh = object.children[0];
-                this.mesh.name = meshName;
-                this.mesh.material = new THREE.MeshPhysicalMaterial({ color: 0xf78a1d, transparent: true, opacity: 0.5, side: THREE.FrontSide });
-                this.world.scene.add( this.mesh );
-                console.log("Building BVH...");
-                this.mesh.geometry.computeBoundsTree( { maxLeafTris: 1, strategy: SAH } ); 
+    /** @param {File} file */
+    async loadFile(fileName, fileURL) {
+        let extension = fileName.toLowerCase().split('.').pop();
 
-                let bbox = new THREE.Box3().setFromObject(this.mesh, true);
-                this.sceneScale = bbox.getSize(new THREE.Vector3()).length() / 3.0;
-                this.world.scaleScene(this.sceneScale);
+        /** @type {THREE.Loader} */
+        let loader = null;
+               if(extension ===  "obj")                          { loader = new  OBJLoader();
+        } else if(extension === "gltf" || extension === ("glb")) { loader = new GLTFLoader();
+        } else if(extension ===  "fbx")                          { loader = new  FBXLoader();
+        } else if(extension ===  "stl")                          { loader = new  STLLoader();
+        } else if(extension === "usdz")                          { loader = new USDZLoader(); }
 
-                await this.sendWorkerRequest("StoreMesh", this.serializeMesh(this.mesh));
 
-                //await this.generateLattice(this.mesh);
-                this.points = await this.samplePoints(this.mesh);
+        let result = await (loader.loadAsync(fileURL,
+            (progressEvent) => { this.updateProgress("Loading "+extension+"...", progressEvent.loaded, progressEvent.total); }));
 
-                await this.generateLattice(this.points);
-            },
-            async ( xhr    ) => { this.updateProgress("Loading Mesh: ", xhr.loaded, xhr.total); },
-            async ( error  ) => { console.log( 'A loading error happened', error );  }
-        );
+               if(extension ===  "obj")                          { result = result;
+        } else if(extension === "gltf" || extension === ("glb")) { result = result.scene;
+        } else if(extension ===  "fbx")                          { result = result.scene;
+        } else if(extension ===  "stl")                          { result = result;
+        } else if(extension === "usdz")                          { result = result.scene; }
+
+        let found = false;
+        let mesh = null;
+        result.traverse((child) => {
+            child.position  .set(0, 0, 0);
+            child.quaternion.set(0, 0, 0, 1);
+            child.scale     .set(1, 1, 1);
+            if (child.isMesh && !found) {
+              mesh = child;
+              console.log("Found Mesh", mesh);
+              mesh.position  .set(0, 0, 0);
+              mesh.quaternion.set(0, 0, 0, 1);
+              mesh.scale     .set(1, 1, 1);
+              
+              found = true;
+            }
+          });
+
+        await this.setupMesh(mesh);
+    }
+
+    async setupMesh(mesh) {
+        if(this.mesh            ){ this.world.scene.remove(this.mesh); this.mesh.geometry .dispose(); this.mesh.material .dispose(); this.world.scaleScene(1.0/this.sceneScale); }
+        if(this.voronoiSpheres  ){ this.world.scene.remove(this.voronoiSpheres)  ; this.voronoiSpheres  .dispose(); }
+        if(this.tetMesh         ){ this.world.scene.remove(this.tetMesh)         ; }
+        if(this.voronoiGeo      ){ this.voronoiGeo.dispose(); }
+        if(this.latticeCylinders){ this.world.scene.remove(this.latticeCylinders); this.latticeCylinders.dispose(); }
+        if(this.line            ){ this.world.scene.remove(this.line)            ; this.line.geometry   .dispose(); }
+    
+        // STEP 0. Create the Mesh and place it in the scene
+        this.mesh = mesh;
+        //this.mesh.name = meshName;
+        this.mesh.material = new THREE.MeshPhysicalMaterial({ color: 0xf78a1d, transparent: true, opacity: 0.5, side: THREE.FrontSide });
+        this.world.scene.add( this.mesh );
+        console.log("Building BVH...");
+        this.mesh.geometry.computeBoundsTree( { maxLeafTris: 1, strategy: SAH } ); 
+
+        let bbox = new THREE.Box3().setFromObject(this.mesh, true);
+        this.sceneScale = bbox.getSize(new THREE.Vector3()).length() / 3.0;
+        this.world.scaleScene(this.sceneScale);
+
+        await this.sendWorkerRequest("StoreMesh", this.serializeMesh(this.mesh));
+
+        //await this.generateLattice(this.mesh);
+        this.points = await this.samplePoints(this.mesh);
+
+        await this.generateLattice(this.points);
+
     }
 
     async sendWorkerRequest(requestType, data){
