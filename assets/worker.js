@@ -9,7 +9,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 
 var namesToMeshes = {}, voro = null, line = null, sceneScale = 1.0, boxMinCorner, boxMaxCorner;
-function storeMesh (data) {
+async function storeMesh (data) {
     console.log("Storing Mesh", data);
 
     let geometry = new THREE.BufferGeometry();
@@ -40,20 +40,21 @@ function storeMesh (data) {
     boxMinCorner = bbox.min;
     boxMaxCorner = bbox.max;
 
-    // Create a new voronoi volume around the mesh
-    Voro3D.create(
-        boxMinCorner.x, 
-        boxMaxCorner.x, 
-        boxMinCorner.y + 0.00000001,
-        boxMaxCorner.y, 
-        boxMinCorner.z, 
-        boxMaxCorner.z, 
-        3, 3, 3).then((newVoro) => { voro = newVoro; });
-
-    return true;
+    let blockingInitialization = new Promise((resolve, reject) => {
+        // Create a new voronoi volume around the mesh
+        Voro3D.create(
+            boxMinCorner.x, 
+            boxMaxCorner.x, 
+            boxMinCorner.y + 0.00000001,
+            boxMaxCorner.y, 
+            boxMinCorner.z, 
+            boxMaxCorner.z, 
+            3, 3, 3).then((newVoro) => { voro = newVoro; resolve(true); });
+    });
+    return await blockingInitialization;
 }
 
-function samplePointsOnMesh (data) {
+async function samplePointsOnMesh (data) {
     let tempVec        = new THREE.Vector3();
     // Create a sampler for the Mesh surface
     let surfaceSampler = new MeshSurfaceSampler( namesToMeshes[data.mesh] ).build();
@@ -73,7 +74,7 @@ function samplePointsOnMesh (data) {
     return points;
 }
 
-function samplePointsInVolume (data) {
+async function samplePointsInVolume (data) {
     let tempVec   = new THREE.Vector3();
     let tempVec2  = new THREE.Vector3();
     let tempVec3  = new THREE.Vector3(1,1,1);
@@ -109,7 +110,7 @@ function samplePointsInVolume (data) {
     return points;
 }
 
-function createVoronoiLattice (data) {
+async function createVoronoiLattice (data) {
 
     // STEP 2. Bake a Voronoi Lattice from the sampled points
 
@@ -282,20 +283,24 @@ function createVoronoiLattice (data) {
 
     // Reinitialize the Voronoi Computer
     voro = null;
-    Voro3D.create(
-        boxMinCorner.x, 
-        boxMaxCorner.x, 
-        boxMinCorner.y + 0.00000001,
-        boxMaxCorner.y, 
-        boxMinCorner.z, 
-        boxMaxCorner.z, 
-        3, 3, 3).then((newVoro) => { voro = newVoro; });
+    let blockingInitialization = new Promise((resolve, reject) => {
+        // Create a new voronoi volume around the mesh
+        Voro3D.create(
+            boxMinCorner.x, 
+            boxMaxCorner.x, 
+            boxMinCorner.y + 0.00000001,
+            boxMaxCorner.y, 
+            boxMinCorner.z, 
+            boxMaxCorner.z, 
+            3, 3, 3).then((newVoro) => { voro = newVoro; resolve(true); });
+    });
+    await blockingInitialization;
 
     postMessage( { "type": "Progress", "message": "Lattice Complete!", "progress": 1.0 });
     return connections;
 }
 
-function computeIntersectionContours (mesh1, mesh2) {
+async function computeIntersectionContours (mesh1, mesh2) {
     let lineGeometry = new THREE.BufferGeometry();
     lineGeometry.setFromPoints( [ new THREE.Vector3( 0, 1, 0 ), new THREE.Vector3( 0, - 1, 0 ) ] );
     line = new THREE.LineSegments( lineGeometry, new THREE.LineBasicMaterial( { color: 0x00FF00 } ) );
@@ -342,7 +347,7 @@ function computeIntersectionContours (mesh1, mesh2) {
 /** Allows transferring to worker; CANNOT SERIALIZE BVH!!!
  *  Recommend Transferring and Building once
  * @param {THREE.Mesh} mesh */
-function serializeMesh(mesh) {
+async function serializeMesh(mesh) {
     let serializedMesh = {
         name    : mesh.name,
         vertices: mesh.geometry.getAttribute("position").array
@@ -352,7 +357,7 @@ function serializeMesh(mesh) {
     return serializedMesh;
 }
 
-onmessage = (e) => {
+onmessage = async (e) => {
     let typeToFunction = {
         "StoreMesh"              : storeMesh,
         "SamplePointsOnMesh"     : samplePointsOnMesh,
@@ -360,7 +365,7 @@ onmessage = (e) => {
         "CreateVoronoiLattice"   : createVoronoiLattice,
     }
     if(e.data.type in typeToFunction){
-        postMessage({ "type": e.data.type, "result": typeToFunction[e.data.type](e.data.data) });
+        postMessage({ "type": e.data.type, "result": await typeToFunction[e.data.type](e.data.data) });
     } else {
         postMessage({ "type": "Error", "result": "Unknown type: " + e.data.type, "data": e.data.data });
     }

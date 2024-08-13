@@ -10,9 +10,9 @@ function makeRelativePath(baseURL, path, debug) {
     return path;
   }
   let ret = baseURL + '/' + path;
-  if(!ret.includes('StochasticLatticeGen')) {
-    ret = baseURL + '/StochasticLatticeGen/' + path;
-  }
+  //if(!ret.includes('StochasticLatticeGen')) {
+  //  ret = baseURL + '/StochasticLatticeGen/' + path;
+  //}
   if (debug) {
     console.log(`makeRelativePath> Update path from ${path} to ${ret}`);
   }

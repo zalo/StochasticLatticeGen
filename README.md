@@ -35,3 +35,4 @@ After building, make sure to edit the index .html to point from `"./src/main.js"
  - [three.js](https://github.com/mrdoob/three.js/) (3D Rendering Engine)
  - [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) (Accelerated Raycasting and Closest Point Queries)
  - [esbuild](https://github.com/evanw/esbuild/) (Bundler)
+ - [worker-with-import-map](https://github.com/kungfooman/worker-with-import-map/) (Hack to allow Import Maps in Workers)

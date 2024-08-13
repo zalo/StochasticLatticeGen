@@ -2,9 +2,7 @@ import * as THREE from '../node_modules/three/build/three.module.js';
 import { GUI } from '../node_modules/three/examples/jsm/libs/lil-gui.module.min.js';
 import World from './World.js';
 import { OBJLoader } from '../node_modules/three/examples/jsm/loaders/OBJLoader.js';
-import { Voro3D } from '../assets/voro3d/dist/index.js';
-import { MeshSurfaceSampler } from '../node_modules/three/examples/jsm/math/MeshSurfaceSampler.js';
-import { Worker } from "../node_modules/worker-with-import-map/src/index.js";
+import { Worker } from "../assets/worker-with-import-map.js";
 
 // Import the BVH Acceleration Structure and monkey-patch the Mesh class with it
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast, SAH } from '../node_modules/three-mesh-bvh/build/index.module.js';
