@@ -2,6 +2,7 @@ import * as THREE from '../node_modules/three/build/three.module.js';
 import { GUI } from '../node_modules/three/examples/jsm/libs/lil-gui.module.min.js';
 import World from './World.js';
 import { Worker } from "./worker-with-import-map.js";
+import { SegmentAccelerator } from "./SegmentAccelerator.js";
 
 import { OBJLoader } from '../node_modules/three/examples/jsm/loaders/OBJLoader.js';
 import { GLTFLoader } from '../node_modules/three/examples/jsm/loaders/GLTFLoader.js';
@@ -38,6 +39,8 @@ export default class Main {
             numPoints: 500,
             showPoints: false,
             latticeMode: 0,
+            exportPointCloudPLY: await this.exportPointCloudPLY.bind(this),
+            exportEdgesPLY: this.exportEdgesPLY.bind(this)
         };
         this.gui = new GUI();
         //this.gui.add(this.latticeParams, 'loadMesh' ).name( 'Load Mesh' );
@@ -51,6 +54,8 @@ export default class Main {
             if(this.voronoiSpheres){ this.voronoiSpheres.visible = value; }});
         this.gui.add(this.latticeParams, 'latticeMode', { Unconstrained: 2, Trimmed: 1, Conforming: 0, Surface: -1 } ).name( 'Lattice Clipping Mode' ).onFinishChange(async (value) => {
             if(this.mesh){ this.generateLattice(this.points); }});
+        this.gui.add(this.latticeParams, 'exportPointCloudPLY' ).name( 'Export Pointcloud to Mesh' );
+        this.gui.add(this.latticeParams, 'exportEdgesPLY' ).name( 'Export Lattice Edges' );
         //this.gui.add(this.meshingParams, 'TargetTriangles', 100, 5000, 100).onFinishChange((value) => {
         //    if(this.mesh){ this.generateTetMesh(this.mesh); }});
         //this.gui.add(this.meshingParams, 'MaxTriangleEdgeLength').onFinishChange((value) => {
@@ -66,13 +71,13 @@ export default class Main {
 
         this.activePromises = {};
         this.worker = new Worker("./assets/worker.js", { type: "module" });
-        this.worker.onmessage = (e) => {
+        this.worker.onmessage = async (e) => {
             if(e.data.type === "Initialized") {
                 console.log("Worker is ready!");
                 this.worker.postMessage({ type: "Debug", data: "Helloooooooo!" });
                 this.loadFile('armadillo.obj', './assets/armadillo.obj'); // Now that the worker is ready, we can load the initial mesh...
             }else if(e.data.type === "Progress") {
-                this.updateProgress(e.data.message, e.data.progress, 1);
+                await this.updateProgress(e.data.message, e.data.progress, 1);
             } else {
                 console.log("Message received from worker", e.data);
                 // Find the matching promise and resolve it
@@ -103,8 +108,10 @@ export default class Main {
         }
     }
 
-    updateProgress(progressText, current, max){
+    async updateProgress(progressText, current, max){
         this.status.innerHTML = progressText + " - <progress value='" + current + "' max='"+max+"'></progress>";
+        // Add a delay to allow the HTML to take effect
+        await new Promise(resolve => setTimeout(resolve, 10));
     }
 
     /** @param {File} file */
@@ -147,6 +154,203 @@ export default class Main {
           });
 
         await this.setupMesh(mesh);
+    }
+
+    async exportEdgesPLY() {
+        let vertexDict = {};
+        let vertices   = [];
+        let edges      = [];
+
+        for(let i = 0; i < this.connections.length; i++){
+            for(let j = 0; j < 2; j++){
+                let x = this.connections[i][j*3];
+                let y = this.connections[i][j*3+1];
+                let z = this.connections[i][j*3+2];
+                let key = x + " " + y + " " + z;
+                if(!(key in vertexDict)){
+                    vertexDict[key] = vertices.length;
+                    vertices.push([
+                        this.connections[i][j*3],
+                        this.connections[i][j*3+1],
+                        this.connections[i][j*3+2]]);
+                }
+            }
+
+            edges.push([vertexDict[this.connections[i][0] + " " + this.connections[i][1] + " " + this.connections[i][2]],
+                        vertexDict[this.connections[i][3] + " " + this.connections[i][4] + " " + this.connections[i][5]]]);
+        }
+
+        let header = `ply
+format ascii 1.0
+comment object: A single line
+element vertex `+(vertices.length)+`
+property float x
+property float y
+property float z
+element edge `+(edges.length)+`                        
+property int vertex1                  
+property int vertex2                  
+end_header
+`;
+
+        let vertexStrings = [];
+        for(let i = 0; i < vertices.length; i++){
+            vertexStrings.push(vertices[i][0] + " " + vertices[i][1] + " " + vertices[i][2]);
+        }
+        let edgeStrings = [];
+        for(let i = 0; i < edges.length; i++){
+            edgeStrings.push(edges[i][0] + " " + edges[i][1]);
+        }
+
+        let blob = new Blob([header + vertexStrings.join("\n") + "\n" + edgeStrings.join("\n")], { type: 'text/plain' });
+        let url = URL.createObjectURL(blob);
+        let a = document.createElement("a");
+        a.href = url;
+        a.download = "edgeCloud.ply";
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // Cool but failed idea; need a new one
+    /*async exportPointCloudPLY() {
+        let header = `ply
+format ascii 1.0
+element vertex `+(this.connections.length * 16)+`
+property float x
+property float y
+property float z
+property float nx
+property float ny
+property float nz
+end_header
+`;
+
+        let cloudPoints = [];
+        let radius = 1.0;
+        let start = new THREE.Vector3();
+        let end = new THREE.Vector3();
+        let tempCenter = new THREE.Vector3();
+        let tempDir = new THREE.Vector3();
+        let tempDir2 = new THREE.Vector3();
+
+        for(let i = 0; i < this.connections.length; i++){
+            start.set(this.connections[i][0], this.connections[i][1], this.connections[i][2]);
+            end  .set(this.connections[i][3], this.connections[i][4], this.connections[i][5]);
+            tempCenter.addVectors(start, end).multiplyScalar(0.5);
+            tempDir   .subVectors(end, start).normalize();
+
+            for(let j = 1; j <= 4; j++){
+                tempCenter.lerpVectors(start, end, j * 0.2);
+
+                tempDir2.set(-tempDir.y, tempDir.x, tempDir.z).normalize();
+                cloudPoints.push(
+                    "" + (tempCenter.x + (tempDir2.x * radius)) + " ", 
+                    "" + (tempCenter.y + (tempDir2.y * radius)) + " ",
+                    "" + (tempCenter.z + (tempDir2.z * radius)) + " ", 
+                    "" + tempDir2.x + " " + tempDir2.y + " " + tempDir2.z + "\n");
+    
+                tempDir2.set(tempDir.y, -tempDir.x, tempDir.z).normalize();
+                cloudPoints.push(
+                    "" + (tempCenter.x + (tempDir2.x * radius)) + " ", 
+                    "" + (tempCenter.y + (tempDir2.y * radius)) + " ",
+                    "" + (tempCenter.z + (tempDir2.z * radius)) + " ", 
+                    "" + tempDir2.x + " " + tempDir2.y + " " + tempDir2.z + "\n");
+    
+                tempDir2.set(tempDir.x, -tempDir.z, tempDir.y).normalize();
+                cloudPoints.push(
+                    "" + (tempCenter.x + (tempDir2.x * radius)) + " ", 
+                    "" + (tempCenter.y + (tempDir2.y * radius)) + " ",
+                    "" + (tempCenter.z + (tempDir2.z * radius)) + " ", 
+                    "" + tempDir2.x + " " + tempDir2.y + " " + tempDir2.z + "\n");
+    
+                tempDir2.set(tempDir.x, tempDir.z, -tempDir.y).normalize();
+                cloudPoints.push(
+                    "" + (tempCenter.x + (tempDir2.x * radius)) + " ", 
+                    "" + (tempCenter.y + (tempDir2.y * radius)) + " ",
+                    "" + (tempCenter.z + (tempDir2.z * radius)) + " ", 
+                    "" + tempDir2.x + " " + tempDir2.y + " " + tempDir2.z + "\n");
+            }
+
+
+        }
+
+        let blob = new Blob([header + cloudPoints.join("")], { type: 'text/plain' });
+        let url = URL.createObjectURL(blob);
+        let a = document.createElement("a");
+        a.href = url;
+        a.download = "pointCloud.ply";
+        a.click();
+        URL.revokeObjectURL(url);
+    }*/
+
+    /** Create a Line Segment Acceleration Structure and Evaluate on a Grid */
+    async exportPointCloudPLY() {
+        let bbox = new THREE.Box3().setFromObject(this.mesh, true);
+        let voxelRes = 100;
+        console.log("About to build Accelerator...");
+        let accelerator = new SegmentAccelerator(voxelRes, bbox.min, bbox.max);
+        for(let i = 0; i < this.connections.length; i++){
+            accelerator.addSegment(this.connections[i]);
+            if(i % 3000 === 0){
+                await this.updateProgress("Building Accelerator...", i, this.connections.length);
+            }
+        }
+
+        // Acceleration Structure is built; now evaluate on a grid
+        let numPoints    = 0;
+        let cloudPoints  = [];
+        let voxelCenter  = new THREE.Vector3();
+        let surfacePoint = new THREE.Vector3();
+        let normal       = new THREE.Vector3();
+        for(let i = 0; i < voxelRes; i++){
+            for(let j = 0; j < voxelRes; j++){
+                for(let k = 0; k < voxelRes; k++){
+                    accelerator.getVoxelCenter(i, j, k, voxelCenter);
+                    let closestPoints = accelerator.getClosestPointsOnSegmentsToPoint(voxelCenter);
+
+                    for(let l = 0; l < closestPoints.length; l++){
+                        // Project the closest point onto the thickness of the segment
+                        surfacePoint.set(closestPoints[l][0], closestPoints[l][1], closestPoints[l][2]);
+
+                        normal.copy(surfacePoint).sub(voxelCenter).normalize();
+                        surfacePoint.add(normal);
+
+                        cloudPoints.push(
+                            "" + surfacePoint.x + " ", 
+                            "" + surfacePoint.y + " ",
+                            "" + surfacePoint.z + " ",
+                            "" + normal.x + " ", 
+                            "" + normal.y + " ",
+                            "" + normal.z + "\n");
+                        numPoints++;
+                    }
+
+                    if(i * voxelRes * voxelRes + j * voxelRes + k % 3000 === 0){
+                        await this.updateProgress("Evaluating Grid...", i * voxelRes * voxelRes + j * voxelRes + k, voxelRes * voxelRes * voxelRes);
+                    }
+                }
+            }
+        }
+
+        let header = `ply
+format ascii 1.0
+element vertex `+(numPoints)+`
+property float x
+property float y
+property float z
+property float nx
+property float ny
+property float nz
+end_header
+`;
+
+        let blob = new Blob([header + cloudPoints.join("")], { type: 'text/plain' });
+        let url = URL.createObjectURL(blob);
+        let a = document.createElement("a");
+        a.href = url;
+        a.download = "pointCloud.ply";
+        a.click();
+        URL.revokeObjectURL(url);
     }
 
     async setupMesh(mesh) {
@@ -227,7 +431,7 @@ export default class Main {
 
     async generateLattice(points){
         // STEP 2. Generate the Voronoi Lattice from the sampled points
-        let connections = await this.sendWorkerRequest("CreateVoronoiLattice"  , { mesh: this.mesh.name, points: points, mode: this.latticeParams.latticeMode });
+        this.connections = await this.sendWorkerRequest("CreateVoronoiLattice"  , { mesh: this.mesh.name, points: points, mode: this.latticeParams.latticeMode });
 
         if(this.tetMesh         ){ this.world.scene.remove(this.tetMesh)         ; }
         //if(this.voronoiSpheres  ){ this.world.scene.remove(this.voronoiSpheres)  ; this.voronoiSpheres  .dispose(); }
@@ -242,20 +446,20 @@ export default class Main {
         let yVec            = new THREE.Vector3(0, 1, 0);
         let scale           = new THREE.Vector3( 1.0, 1, 1.0 ).multiplyScalar(0.004 * this.sceneScale);
         this.latticeCylinders = new THREE.InstancedMesh( this.cylinderGeo, 
-            new THREE.MeshStandardMaterial( { color: 0x00ff00, roughness: 1, metalness: 0 } ), connections.length );
+            new THREE.MeshStandardMaterial( { color: 0x00ff00, roughness: 1, metalness: 0 } ), this.connections.length );
         this.latticeCylinders.castShadow    = true;
         this.latticeCylinders.receiveShadow = true;
         this.world.scene.add( this.latticeCylinders );
 
         // Set the cylimder positions and rotations according to the connection start/end points
-        for(let i = 0; i < connections.length; i++){
-            let x = (connections[i][0] + connections[i][3]) * 0.5;
-            let y = (connections[i][1] + connections[i][4]) * 0.5;
-            let z = (connections[i][2] + connections[i][5]) * 0.5;
+        for(let i = 0; i < this.connections.length; i++){
+            let x = (this.connections[i][0] + this.connections[i][3]) * 0.5;
+            let y = (this.connections[i][1] + this.connections[i][4]) * 0.5;
+            let z = (this.connections[i][2] + this.connections[i][5]) * 0.5;
 
-            let xd = (connections[i][0] - connections[i][3]);
-            let yd = (connections[i][1] - connections[i][4]);
-            let zd = (connections[i][2] - connections[i][5]);
+            let xd = (this.connections[i][0] - this.connections[i][3]);
+            let yd = (this.connections[i][1] - this.connections[i][4]);
+            let zd = (this.connections[i][2] - this.connections[i][5]);
             tempRotation.setFromUnitVectors(yVec, tempVec2.set(xd, yd, zd).normalize());
 
             scale.y = tempVec2.set(xd, yd, zd).length();
