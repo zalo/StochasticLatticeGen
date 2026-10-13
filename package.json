@@ -1,10 +1,45 @@
 {
-	"scripts": {
-		"build": "esbuild ./src/main.js --bundle --minify --sourcemap --format=esm --outdir=./build --platform=node"
-	},
-	"dependencies": {
-		"esbuild": "^0.23.0",
-		"three": "^0.166.0",
-		"three-mesh-bvh": "^0.7.6"
-	}
+  "name": "stochastic-lattice-gen",
+  "version": "0.2.0",
+  "description": "Mesh-bounded stochastic (Voronoi) lattice generation for the browser, with watertight strut-mesh export via manifold-3d",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src/index.js",
+    "src/lib"
+  ],
+  "scripts": {
+    "dev": "esbuild --servedir=. --serve=127.0.0.1:8000",
+    "build": "node scripts/build.mjs",
+    "test": "node test/smoke.mjs"
+  },
+  "keywords": [
+    "lattice",
+    "voronoi",
+    "manifold",
+    "three.js",
+    "3d-printing"
+  ],
+  "author": "Johnathon Selstad",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zalo/StochasticLatticeGen.git"
+  },
+  "dependencies": {
+    "manifold-3d": "^3.5.4",
+    "three-mesh-bvh": "^0.7.6",
+    "voro3d": "^0.0.7"
+  },
+  "peerDependencies": {
+    "three": ">=0.160.0"
+  },
+  "devDependencies": {
+    "es-module-shims": "^2.8.4",
+    "esbuild": "^0.23.0",
+    "three": "^0.166.0"
+  }
 }

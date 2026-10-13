@@ -1,13 +1,9 @@
 {
-    "compilerOptions": {
-        "module": "es6",
-        "target": "es6"
-    },
-    "include": ["src/**/*"],
-    "typeAcquisition": {
-        "include": [
-            "three",
-            "manifold-3d"
-        ]
-    }
+  "compilerOptions": {
+    "module": "es2022",
+    "target": "es2022",
+    "moduleResolution": "bundler",
+    "checkJs": false
+  },
+  "include": ["src/**/*", "scripts/**/*", "test/**/*"]
 }
